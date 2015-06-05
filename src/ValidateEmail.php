@@ -16,7 +16,7 @@ class ValidateEmail {
      * @param  string  $emailaddress  email address to test
      * @return boolean
      */
-    function test($emailaddress) {
+    public function test($emailaddress) {
         return $this->lookup($emailaddress);
     }
 
@@ -26,8 +26,8 @@ class ValidateEmail {
      * @param  string  $emailaddress  email address to look up
      * @return boolean
      */
-    function lookup($emailaddress) {
         list($user, $domain) = preg_split("/@/", trim($emailaddress));
+    public function lookup($emailaddress) {
 
         if ($user == "") {
             throw new ValidateEmailException("Blank user name");
@@ -61,7 +61,8 @@ class ValidateEmail {
      * @param  string  $mxhost        mail server host name to connect to and test
      * @return boolean
      */
-    function verify($emailaddress, $mxhost) {
+    private function verify($emailaddress, $mxhost)
+    {
         $validated = false;
 
         $socket = stream_socket_client("tcp://" . $mxhost . ":25", $errno, $errstr, 30);
