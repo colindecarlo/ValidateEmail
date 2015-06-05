@@ -2,7 +2,8 @@
 
 namespace ServiceTo;
 
-class ValidateEmail {
+class ValidateEmail
+{
     /**
      * The address to supply in our MAIL FROM connection to the SMTP servers we're talking to.
      *
@@ -16,7 +17,8 @@ class ValidateEmail {
      * @param  string  $emailaddress  email address to test
      * @return boolean
      */
-    public function test($emailaddress) {
+    public function test($emailaddress)
+    {
         return $this->lookup($emailaddress);
     }
 
@@ -26,12 +28,14 @@ class ValidateEmail {
      * @param  string  $emailaddress  email address to look up
      * @return boolean
      */
+    public function lookup($emailaddress)
+    {
         list($user, $domain) = preg_split("/@/", trim($emailaddress));
-    public function lookup($emailaddress) {
 
         if ($user == "") {
             throw new ValidateEmailException("Blank user name");
         }
+
         if ($domain == "") {
             throw new ValidateEmailException("Blank domain name");
         }
@@ -48,8 +52,7 @@ class ValidateEmail {
                     return true;
                 }
             }
-        }
-        else {
+        } else {
             throw new ValidateEmailException("No MX records");
         }
     }
@@ -88,6 +91,7 @@ class ValidateEmail {
                     break;
                 }
             }
+
             $response = trim($buffer, "\r\n");
             $buffer = null;
 
