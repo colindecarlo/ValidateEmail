@@ -2,8 +2,6 @@
 
 namespace ServiceTo;
 
-use Exception;
-
 class ValidateEmail {
     /**
      * The address to supply in our MAIL FROM connection to the SMTP servers we're talking to.
@@ -139,5 +137,3 @@ class ValidateEmail {
         }
     }
 }
-
-class ValidateEmailException extends Exception {}
