@@ -42,19 +42,15 @@ class ValidateEmail
 
         $mxhosts = array();
         $weight = array();
-        if (getmxrr($domain, $mxhosts, $weight)) {
-            // pick first one and check it.
-
-            array_multisort($weight, $mxhosts);
-
-            foreach ($mxhosts as $id => $mxhost) {
-                if ($this->verify($emailaddress, $mxhost)) {
-                    return true;
-                }
-            }
-        } else {
+        if (! getmxrr($domain, $mxhosts, $weight)) {
             throw new ValidateEmailException("No MX records");
         }
+
+        // pick first one and check it.
+        array_multisort($weight, $mxhosts);
+        return !! first($mxhosts, function ($mxhost) use ($emailaddress) {
+            return call_user_func_array(array($this, 'verify'), array($emailaddress, $mxhost));
+        });
     }
 
     /**
@@ -66,79 +62,82 @@ class ValidateEmail
      */
     private function verify($emailaddress, $mxhost)
     {
-        $validated = false;
-
-        $socket = stream_socket_client("tcp://" . $mxhost . ":25", $errno, $errstr, 30);
-        stream_set_blocking($socket, true);
-
-        $buffer = null;
-        // server will say hi...
-        $buffer .= fgets($socket, 2048);
-
-        $response = trim($buffer, "\r\n.");
-        $buffer = null;
-
-        list($code, $message) = preg_split("/\s+/", $response, 2);
-        if ($code == 220) {
-            // say hello.
-            $message = "EHLO ValidateEmail\r\n";
-            fwrite($socket, $message);
-
-            while($buf = fgets($socket)) {
-                $buffer .= $buf;
-                list($code, $message) = preg_split("/\s+/", $buf, 2);
-                if ($code == "250") {
-                    break;
-                }
-            }
-
-            $response = trim($buffer, "\r\n");
-            $buffer = null;
-
-            $lines = preg_split("/\n/", $response);
-            $last = count($lines) - 1;
-            list($code, $message) = preg_split("/\s+/", $lines[$last], 2);
-            if ($code == 250) {
-                // give them my from address
-                $message = "MAIL FROM:<" . $this->testaddress . ">\r\n";
-                fwrite($socket, $message);
-
-                $buffer .= fgets($socket, 2048);
-
-                $response = trim($buffer, "\r\n");
-                $buffer = null;
-
-                list($code, $message) = preg_split("/\s+/", $response, 2);
-
-                if ($code == 250) {
-                    // give them the user's address.
-                    $message = "RCPT TO:<" . $emailaddress . ">\r\n";
-                    fwrite($socket, $message);
-
-                    $buffer .= fgets($socket, 2048);
-
-                    $response = trim($buffer, "\r\n");
-                    $buffer = null;
-
-                    list($code, $message) = preg_split("/\s+/", $response, 2);
-                    if ($code == 250) {
-                        $validated = true;
-                    }
-
-                    // say goodbye regardless
-                    $message = "QUIT\r\n";
-                    fwrite($socket, $message);
-
-                    $buffer .= fgets($socket, 2048);
-
-                    $response = trim($buffer, "\r\n");
-                    $buffer = null;
-
-                    list($code, $message) = preg_split("/\s+/", $response, 2);
-
-                    return $validated;
-                }
-            }
+        if (! ($socket = @stream_socket_client("tcp://" . $mxhost . ":25", $errno, $errstr, 3))) {
+            return false;
         }
+
+        $onFailure = function () use ($socket) {
+            call_user_func(array($this, sendQuitAndClose), $socket);
+        };
+
+        // server will say hi...
+        $response = $this->listen($socket);
+        list($code, $message) = $this->parseResponse($response);
+
+        if (when($code != 220, $onFailure)) {
+            return false;
+        }
+
+        // say hello.
+        list($code, $message) = $this->sendEHLO($socket);
+
+        if (when($code != 250, $onFailure)) {
+            return false;
+        }
+
+        $response = $this->send(sprintf("MAIL FROM:<%s>\r\n", $this->testaddress));
+        list($code, $message) = $this->parseResponse($response);
+
+        if (when($code != 250, $onFailure)) {
+            return false;
+        }
+        // give them the user's address.
+        $response = $this->send(sprintf("RCPT TO:<%s>\r\n", $emailaddress));
+        list($code, $message) = $this->parseResponse($response);
+
+        if (when($code != 250, $onFailure)) {
+            return false;
+        }
+
+        $this->sendQuitAndClose($socket);
+        return true;
+    }
+
+    private function sendQuitAndClose($socket)
+    {
+        $this->send("QUIT\r\n");
+        socket_close($socket);
+    }
+
+    private function sendEHLO($socket)
+    {
+        $message = "EHLO ValidateEmail\r\n";
+        fwrite($socket, $message);
+
+        $code = '';
+        while(($buf = fgets($socket)) && $code != "250") {
+            $buffer .= $buf;
+            list($code, $message) = $this->parseResponse($buffer);
+        }
+        $response = trim($buffer, "\r\n");
+
+        $lines = explode("\n", $response);
+        return $this->parseResponse(end($lines));
+    }
+
+    private function listen($socket)
+    {
+        return trim(fgets($socket, 2048), "\r\n");
+    }
+
+    private function send($socket, $message)
+    {
+        fwrite($socket, $message);
+        return $this->listen($socket);
+    }
+
+    private function parseResponse($response)
+    {
+        return preg_split('/\s+/', $response, 2);
     }
 }
